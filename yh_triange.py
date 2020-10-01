@@ -20,7 +20,9 @@ def yh_triange(yh_nums):
     for i in states:
         print(i)
 
+    print ('fsc')
     return min(states[n-1])
+    
 
 
 
