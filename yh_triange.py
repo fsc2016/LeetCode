@@ -35,6 +35,7 @@ def get_road(states,yh_nums):
     print('main')
 
 
+
 if __name__ == '__main__':
     nums = [[3], [2, 6], [5, 4, 2], [6, 0, 3, 2]]
     print(yh_triange(nums))
