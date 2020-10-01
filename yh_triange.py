@@ -32,6 +32,7 @@ def get_road(states,yh_nums):
         for j in range(i+1):
             pass
             # min()
+    print('main')
 
 
 if __name__ == '__main__':
