@@ -22,16 +22,6 @@ def yh_triange(yh_nums):
 
     return min(states[n-1])
 
-# def get_road(states,yh_nums):
-#     n = len(states)
-#     tmp = []
-#
-#     idx=states[n-1].index(min(states[n-1]))
-#     tmp.append(yh_nums[n-1][idx])
-#     for i in range(n-1)[::-1]:
-#         for j in range(i+1):
-#             pass
-#             # min()
 
 
 if __name__ == '__main__':
