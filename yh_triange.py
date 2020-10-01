@@ -20,7 +20,9 @@ def yh_triange(yh_nums):
     for i in states:
         print(i)
 
+    print ('fsc')
     return min(states[n-1])
+    
 
 def get_road(states,yh_nums):
     n = len(states)
@@ -33,7 +35,6 @@ def get_road(states,yh_nums):
             pass
             # min()
     print('main')
-
 
 
 if __name__ == '__main__':
