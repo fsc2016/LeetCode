@@ -58,3 +58,4 @@ if __name__ == '__main__':
     array.printall()
     # assert len(array) == 5
     assert array.find(1) == 5
+    
