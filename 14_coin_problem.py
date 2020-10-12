@@ -38,10 +38,11 @@ def coin_solu2(money:int)->int:
     def min_coin(remain):
         global count
         if remain == 1 :return 1
-        if remain == 2 :return 2
+        # if remain == 2 :return 2
         if remain == 3 :return 1
-        if remain == 4 :return 2
+        # if remain == 4 :return 2
         if remain == 5 :return 1
+        if remain < 0 :return float('inf')
         # 加入备忘录
         if tables[remain-1]:
             return tables[remain-1]
@@ -58,5 +59,5 @@ if __name__ == '__main__':
     # print(coin_solu(10))
     import time
     st=time.time()
-    print(coin_solu(42))
+    print(coin_solu2(42))
     print(time.time()-st)
