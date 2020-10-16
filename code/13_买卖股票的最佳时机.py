@@ -76,6 +76,27 @@ def maxProfit2(prices: List[int]) -> int:
         max_income += peak - valley
     return max_income
 
+def maxProfit2_rv1(prices: List[int]) -> int:
+    '''
+    波峰波谷
+    :param prices:
+    :return:
+    '''
+    n = len(prices)
+    i = 0
+    maxfit=0
+    while (i<n-1):
+        while(i < n-1 and prices[i+1] <= prices[i]):
+            i+=1
+        # 波谷
+        valley = prices[i]
+        while (i < n-1 and prices[i+1]>prices[i]):
+            i+=1
+        peak = prices[i]
+        maxfit += peak - valley
+    return maxfit
+
+
 def maxProfit3(prices: List[int]) -> int:
     '''
     动态规划法。主要是采用动态转移表。分成俩个状态
@@ -94,7 +115,22 @@ def maxProfit3(prices: List[int]) -> int:
         dp[i][1] = max(dp[i-1][1],dp[i-1][0] - prices[i]) #当前阶段是否买入最低值股票
     return dp[n-1][0]
 
+def maxProfit3_rv1(prices: List[int]) -> int:
+    n  = len(prices)
+    dp = [[0]*2 for i in range(n)]
+    dp[0][0] = 0
+    dp[0][1] = -prices[0]
+    for i in range(1,n):
+        dp[i][0] =max( dp[i-1][0], dp[i-1][1] + prices[i])
+        dp[i][1] =max( dp[i-1][1], dp[i-1][0] - prices[i])
+    return dp[n-1][0]
+
+
+
+
 if __name__ == '__main__':
     prices=[7,1,5,3,6,4]
     # prices=[7,6,4,3,1]
     print(maxProfit3(prices))
+    print(maxProfit2_rv1(prices))
+    print(maxProfit3_rv1(prices))
