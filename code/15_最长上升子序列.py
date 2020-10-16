@@ -17,6 +17,18 @@ def lengthOfLIS(nums: List[int]) -> int:
     # print(dp)
     return max(dp)
 
+def lengthOfLIS_rv1(nums: List[int]) -> int:
+    n = len(nums)
+    # dp状态定义为存储当前长度 最长上升子序列
+    dp = [1] * n
+    for i in range(1,n):
+        # 后一状态由前面所有节点状态推出
+        for j in range(i):
+            if nums[i] > nums[j]:
+                dp[i] = max(dp[i],dp[j]+1)
+    return max(dp)
+
+
 if __name__ == '__main__':
     l=[10, 9, 2, 5, 3, 7, 101, 18]
-    print(lengthOfLIS(l))
+    print(lengthOfLIS_rv1(l))
