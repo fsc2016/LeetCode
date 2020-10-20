@@ -26,6 +26,15 @@ def maxProduct(nums:List)-> int:
         ans_min = min(ans_min,minnum)
     return ans,ans_min
 
+def maxProduct_rv1(nums:List)-> int:
+    n = len(nums)
+    tmp_min,tmp_max,best = nums[0],nums[0],nums[0]
+    for i in range(1,n):
+        tmp_max = max(nums[i],tmp_max*nums[i],tmp_min*nums[i])
+        tmp_min = min(nums[i],tmp_min*nums[i],tmp_max*nums[i])
+        best = max(tmp_max,best)
+    return best
+
 def maxProduct2(self, nums: List[int]) -> int:
     '''
     穷举法
@@ -47,5 +56,5 @@ def maxProduct2(self, nums: List[int]) -> int:
 
 if __name__ == '__main__':
     l=[2,3,-2,4]
-    l= [-2,0,-1]
-    print(maxProduct(l))
+    # l= [-2,0,-1]
+    print(maxProduct_rv1(l))
