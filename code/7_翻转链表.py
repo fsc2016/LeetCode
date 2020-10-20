@@ -23,6 +23,12 @@ class Solution:
         cur = head
         reverse_head,reverse_head.next,cur = cur,reverse_head,cur.next
 
+    def reverseList_rv1(self, head: ListNode) -> ListNode:
+        reserve_head = None
+        cur = head
+        while cur:
+            reserve_head,reserve_head.next,cur = cur,reserve_head,cur.next
+        return reserve_head
 
 if __name__ == '__main__':
     l=[1,2,3,4,5]
