@@ -3,13 +3,12 @@ import findspark
 findspark.init()
 from pyspark.sql import *
 from pyspark.sql.types import  IntegerType,ArrayType
-from pyspark.ml.feature import OneHotEncoder,StringIndexer
+from pyspark.ml.feature import OneHotEncoder,StringIndexer,QuantileDiscretizer,MinMaxScaler
 from pyspark.ml import Pipeline
 # from pyspark.sql.functions import explode,split
 from pyspark.sql.functions import *
-from pyspark.ml.linalg.Vectors import sparse
-
-
+import pyspark.sql.functions as F
+from pyspark.ml.linalg import VectorUDT,Vectors
 
 
 def oneHotEncoderExample(df):
@@ -24,26 +23,83 @@ def oneHotEncoderExample(df):
 
 def multiHotEncoderExample(df):
     '''
-    多变量编码
+    对genres进行多热编码
     :param df:
     :return:
     '''
+    dfWithGenre = df.select('movieId', 'title', explode(split(df.genres, '\\|')).alias('genre'))
 
-def myudf(indexes:List,size):
-    return sparse(size,indexes.sort(),len(indexes)*[1.0])
+    # StringIndexer对genre建立index
+    stringIndex = StringIndexer(inputCol='genre', outputCol='genreIndex')
+    stringIndexerModel = stringIndex.fit(dfWithGenre)
+    genreIndexSamples = stringIndexerModel.transform(dfWithGenre) #genreIndex type=double
+    genreIndexSamples = genreIndexSamples.withColumn('genreIndexInt', genreIndexSamples.genreIndex.cast(IntegerType()))
+    genreIndexSamples.show(10)
 
+    # genreIndexSamples.printSchema()
+    # 一共有多少类型
+    # indexSize = genreIndexSamples.agg({'genreIndexInt': 'max'}).collect()[0][0] + 1
+    indexSize = genreIndexSamples.agg(F.max(col('genreIndexInt'))).collect()[0][0] + 1
+    # indexSize = genreIndexSamples.select('genreIndexInt').rdd.max()[0]+1
+    print(indexSize)
 
+    processedSamples = genreIndexSamples.groupBy('movieId').agg(collect_list('genreIndexInt').alias('genreIndexes')).withColumn("indexSize", lit(indexSize))
+    processedSamples.show(5)
 
+    #用户自定义函数，注意返回值类型
+    array2vec = udf(f=tmpArray2vec, returnType=VectorUDT())
+    finalSample = processedSamples.withColumn('vector', array2vec(processedSamples['genreIndexes'],processedSamples['indexSize']))
+    finalSample.show(10)
+
+def ratingFeatures(rating_df):
+    '''
+    处理评论数据
+    :param rating_df:
+    :return:
+    '''
+    rating_df.printSchema()
+    rating_df.show(10)
+
+    # 用户自定义函数
+    double2vec = udf(f=tmpDouble2vec, returnType=VectorUDT())
+    movieFeatures = rating_df.groupBy(col('movieId')).agg(count(lit(1)).alias('ratingCount'),
+                                                          avg(col('rating')).alias('avgRating'),
+                                                          variance(col('rating')).alias('ratingVar')).withColumn(
+        'avgRatingVec', double2vec(col('avgRating')))
+    movieFeatures.show(10)
+
+    userFeatures = rating_df.groupBy(col('userId')).agg(count(lit(1)).alias('ratingCount'),
+                                                        avg(col('rating')).alias('avgRating'),
+                                                        variance(col('rating')).alias('ratingVar'))
+    userFeatures.show(10)
+
+    movieFeatures.printSchema()
+
+    # 分箱
+    ratingCountDiscretizer = QuantileDiscretizer(inputCol='ratingCount', outputCol='ratingCountBucket',
+                                                 numBuckets=100).setHandleInvalid('keep')
+    # 归一化
+    ratingScaler = MinMaxScaler(inputCol='avgRatingVec', outputCol='scaleAvgRating')
+    pipe = Pipeline(stages=[ratingCountDiscretizer, ratingScaler])
+    model = pipe.fit(movieFeatures)
+    movieProcessedFeatures = model.transform(movieFeatures)
+    movieProcessedFeatures.show(10)
+
+def tmpArray2vec(indexes,size):
+    indexes.sort()
+    return Vectors.sparse(size,indexes,len(indexes)*[1.0])
+
+def tmpDouble2vec(x):
+    return Vectors.dense(x)
 
 
 if __name__ == '__main__':
 
     spark = SparkSession.builder.appName('learn_ml').master('local[*]').getOrCreate()
     df=spark.read.format('csv').option("header", "true").load('./data/movies.csv')
-    df = spark.read.csv( path='./data/movies.csv',inferSchema=True,header=True)
-    df.printSchema()
-    df.show(5)
-    df.head()
+    # df = spark.read.csv( path='./data/movies.csv',inferSchema=True,header=True)
+    # df.printSchema()
+    # df.show(5)
     # df2 = spark.createDataFrame([(2,), (5,), (5,)], ('age',))
     # print(df2.agg(collect_list('age')).collect())
 
@@ -53,26 +109,20 @@ if __name__ == '__main__':
     # oneHotEncoderExample(df)
 
     # multiHotEncoderExample
-    # multiHotEncoderExample(df)
-    dfWithGenre = df.select('movieId', 'title', explode(split(df.genres, '\\|')).alias('genre'))
-    # dfWithGenre.show(10)
-    stringIndex = StringIndexer(inputCol='genre',outputCol='genreIndex')
-    stringIndexerModel=stringIndex.fit(dfWithGenre)
-    genreIndexSamples=stringIndexerModel.transform(dfWithGenre)
-    # genreIndexSamples.show(10)
-    genreIndexSamples=genreIndexSamples.withColumn('genreIndexInt',genreIndexSamples.genreIndex.cast(IntegerType()))
-    genreIndexSamples.show(10)
-    # genreIndexSamples.printSchema()
-    # 一共有多少类型
-    indexSize = genreIndexSamples.agg({'genreIndexInt':'max'}).collect()[0][0]+1
-    # indexSize = genreIndexSamples.select('genreIndexInt').rdd.max()[0]+1
-    # print(indexSize)
-    processedSamples = genreIndexSamples.groupBy('movieId').agg(collect_list('genreIndexInt').alias('genreIndexes')).withColumn("indexSize", lit(indexSize))
-    processedSamples.show(10)
+    multiHotEncoderExample(df)
 
-    array2vec=udf(f=myudf,returnType=ArrayType)
-    finalSample=processedSamples.withColumn('vector',array2vec(processedSamples['genreIndexes'],processedSamples['indexSize']))
-    finalSample.show(10)
+    #ratingFeatures
+    rating_df = spark.read.format('csv').option("header", "true").load(path='./data/ratings.csv')
+    ratingFeatures(rating_df)
+
+
+
+
+
+
+
+
+
 
 
 
