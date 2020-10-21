@@ -19,5 +19,10 @@ class Solution:
                     head =l1
                 else:
                     head.next =l1
+            else:
+                if not head:
+                    head =l2
+                else:
+                    head.next =l2
 
 
