@@ -112,8 +112,8 @@ if __name__ == '__main__':
     multiHotEncoderExample(df)
 
     #ratingFeatures
-    # rating_df = spark.read.format('csv').option("header", "true").load(path='./data/ratings.csv')
-    # ratingFeatures(rating_df)
+    rating_df = spark.read.format('csv').option("header", "true").load(path='./data/ratings.csv')
+    ratingFeatures(rating_df)
 
 
 
