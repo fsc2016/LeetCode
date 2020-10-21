@@ -2,12 +2,12 @@ from typing import *
 import findspark
 findspark.init()
 from pyspark.sql import *
-from pyspark.sql.types import  *
+from pyspark.sql.types import  IntegerType,ArrayType
 from pyspark.ml.feature import OneHotEncoder,StringIndexer
 from pyspark.ml import Pipeline
 # from pyspark.sql.functions import explode,split
 from pyspark.sql.functions import *
-# from pyspark.ml.linalg.Vectors import sparse
+from pyspark.ml.linalg.Vectors import sparse
 
 
 
@@ -30,10 +30,7 @@ def multiHotEncoderExample(df):
     '''
 
 def myudf(indexes:List,size):
-    indexes.sort()
-    return [indexes]
-    # return size*2
-    # return [size,indexes.sort(),len(indexes)*[1]]
+    return sparse(size,indexes.sort(),len(indexes)*[1.0])
 
 
 
@@ -41,7 +38,7 @@ def myudf(indexes:List,size):
 
 if __name__ == '__main__':
 
-    spark = SparkSession.builder.appName('learn_ml').master('local[*]').config("spark.submit.deployMode", "client").getOrCreate()
+    spark = SparkSession.builder.appName('learn_ml').master('local[*]').getOrCreate()
     df=spark.read.format('csv').option("header", "true").load('./data/movies.csv')
     df = spark.read.csv( path='./data/movies.csv',inferSchema=True,header=True)
     df.printSchema()
@@ -73,9 +70,16 @@ if __name__ == '__main__':
     processedSamples = genreIndexSamples.groupBy('movieId').agg(collect_list('genreIndexInt').alias('genreIndexes')).withColumn("indexSize", lit(indexSize))
     processedSamples.show(10)
 
-    array2vec=udf(f=myudf,returnType=ArrayType(IntegerType()))
-    finalSample=processedSamples.withColumn('vector',array2vec(col('genreIndexes'),col('indexSize')))
+    array2vec=udf(f=myudf,returnType=ArrayType)
+    finalSample=processedSamples.withColumn('vector',array2vec(processedSamples['genreIndexes'],processedSamples['indexSize']))
     finalSample.show(10)
+
+
+
+
+
+
+
 
 
 
