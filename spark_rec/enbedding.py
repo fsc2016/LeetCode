@@ -24,42 +24,42 @@ def processItemSequence(spark:SparkSession):
     :param spark:
     :return:
     '''
-    path ='./cache/item2vec_data.csv'
-    if not os.path.exists(path):
-        df = spark.read.format('csv').option('header', 'true').load('./data/ratings.csv')
-        df.printSchema()
 
-        sortUdf = udf(f=sortByTime,returnType=ArrayType(StringType()))
-        userSeq=df.where(df['rating'] >= 3.5).groupby('userId').agg(sortUdf(collect_list(struct('movieId','timestamp'))).alias('movieIds'))\
-            .withColumn('movieIdStr',array_join('movieIds',' '))
-        userSeq.show(10)
+    df = spark.read.format('csv').option('header', 'true').load('./data/ratings.csv')
+    df.printSchema()
 
-        #不使用udf，速度慢一点
-        # df.where(df['rating'] >= 3.5).sort('timestamp').groupby('userId').agg(collect_list('movieId').alias('movieIds')).withColumn('movieIdStr',array_join('movieIds',' ')).show(10)
+    sortUdf = udf(f=sortByTime,returnType=ArrayType(StringType()))
+    userSeq=df.where(df['rating'] >= 3.5).groupby('userId').agg(sortUdf(collect_list(struct('movieId','timestamp'))).alias('movieIds'))\
+        .withColumn('movieIdStr',array_join('movieIds',' '))
+    userSeq.show(10)
 
-        # dataset = userSeq.select('movieIdStr')
-        # dataset.write.save(path,format='csv')
-        userSeq.printSchema()
-        userSeq.select('userId','movieIdStr').toPandas()['userId','movieIdStr'].to_csv(path)
-        # userSeq.write.format('csv').option('header','true').save(path)
-        dataset = userSeq.select('movieIdStr')
-    else:
-        dataset=spark.read.format('csv').option('header', 'true').load(path)
-        dataset.show(10)
+    #不使用udf，速度慢一点
+    # userSeq=df.where(df['rating'] >= 3.5).sort('timestamp').groupby('userId').agg(collect_list('movieId').alias('movieIds')).withColumn('movieIdStr',array_join('movieIds',' ')).show(10)
+
+    userSeq.printSchema()
+    dataset = userSeq.select('movieIds')
     return dataset
 
 def trainItem2vec(dataset):
-    word2vec = Word2Vec(vectorSize=10,windowSize=5,maxIter=10,inputCol='movieIdStr')
+    '''
+    训练产生embedding,inputCol需要是 array（string）类型
+    训练好后写入 item2vecEmb.txt
+    :param dataset:
+    :return:
+    '''
+    word2vec = Word2Vec(vectorSize=10,windowSize=5,maxIter=10,inputCol='movieIds')
     model = word2vec.fit(dataset)
     print('model fitted')
-    # synonyms = model.findSynonyms('158',20)
-    # for moveid,similarity in synonyms:
-    #     print('{}-{}'.format(moveid,similarity))
+    synonyms = model.findSynonymsArray('158',20)
+    for moveid,similarity in synonyms:
+        print('{}:{}'.format(moveid,similarity))
 
-
+    with open('./modeldata/item2vecEmb.txt','w') as f:
+        for row in model.getVectors().collect():
+            f.write('{}:{}\n'.format(row['word'],row['vector']))
 
 
 if __name__ == '__main__':
     spark = SparkSession.builder.appName('enbbeding').master('local[*]').getOrCreate()
     dataset=processItemSequence(spark)
-    # trainItem2vec(dataset)
+    trainItem2vec(dataset)
