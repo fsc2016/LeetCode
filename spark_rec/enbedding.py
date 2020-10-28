@@ -53,13 +53,13 @@ def trainItem2vec(dataset,filename):
     model = word2vec.fit(dataset)
     print('model fitted')
     # 打印相似电影，基于点积运算
-    # synonyms = model.findSynonymsArray('158',20)
-    # for moveid,similarity in synonyms:
-    #     print('{}:{}'.format(moveid,similarity))
+    synonyms = model.findSynonymsArray('158',20)
+    for moveid,similarity in synonyms:
+        print('{}:{}'.format(moveid,similarity))
 
     with open('./modeldata/{}'.format(filename),'w') as f:
         for row in model.getVectors().collect():
-            f.write('{}:{}\n'.format(row['word'],' '.join(row['vector'])))
+            f.write('{}:{}\n'.format(row['word'],row['vector']))
 
 
 def dealPairMovie(movies:Row)->List:
@@ -81,6 +81,7 @@ def generateTransitionMatrix(dataset:DataFrame):
     print(pairSamples.take(10))
     print('pairSamples over')
     # {(mid,mid2):count,...}
+
     pairCountMap = pairSamples.countByValue()
 
     print('pairCountMap_{}'.format(len(pairCountMap)))
@@ -105,7 +106,7 @@ def generateTransitionMatrix(dataset:DataFrame):
 
     print('transitionMatrix_{}'.format(len(transitionMatrix)))
     print(transitionMatrix['858'])
-    print('itemDistribution{}'.format(len(itemDistribution)))
+    print('itemDistribution_{}'.format(len(itemDistribution)))
     print(itemDistribution['858'])
     return transitionMatrix,itemDistribution
 
@@ -133,11 +134,18 @@ def oneRandomWalk(transitionMatrix, itemDistribution, sampleLength):
 
     # 按照状态转移，取后面9部电影
     for i in range(1,sampleLength):
+        if not transitionMatrix[curItem] or not itemDistribution[curItem]:
+            break
+        # 随机游走的策略
+        curProb = itemDistribution[curItem]
         prob = random.random()
-        for k,v in transitionMatrix[firstItem]:
-            if v >= prob:
+        accumulateProb=0
+        for k,v in transitionMatrix[curItem].items():
+            accumulateProb += v
+            if accumulateProb >= prob*curProb:
                 curItem = k
                 break
+
         sample.append(curItem)
     return sample
 
@@ -162,11 +170,15 @@ def graphEmb(dataset:DataFrame,spark:SparkSession,embOutputFilename):
     sampleLength = 10
 
     newSamples=randomWalk(transitionMatrix, itemDistribution, sampleCount, sampleLength)
-    rddSamples=spark.sparkContext.parallelize(newSamples)
-    print(rddSamples[:10])
-
-    # dataFrameSamples = spark.createDataFrame(rddSamples)
-    # trainItem2vec(dataFrameSamples,embOutputFilename)
+    # 转为rdd
+    rddSamples=spark.sparkContext.parallelize([Row(movieIds=i) for i in newSamples])
+    print(newSamples[:10])
+    print(rddSamples.take(10))
+    # 转为DataFrame
+    dataFrameSamples = spark.createDataFrame(rddSamples)
+    print(type(dataFrameSamples))
+    print(dataFrameSamples.take(10))
+    trainItem2vec(dataFrameSamples,embOutputFilename)
 
 
 
@@ -174,7 +186,8 @@ if __name__ == '__main__':
     spark = SparkSession.builder.appName('enbbeding').master('local[*]').getOrCreate()
     dataset=processItemSequence(spark)
     print(type(dataset))
-    # trainItem2vec(dataset)
-    graphEmb(dataset,spark,'item2vecEmb.csv')
+    print(dataset.take(10))
+    # trainItem2vec(dataset,'item2vecEmb1.txt')
+    graphEmb(dataset,spark,'item2graphVecEmb.txt')
 
 
