@@ -6,7 +6,8 @@ from pyspark.sql.types import  IntegerType,ArrayType,StringType
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import Word2Vec,Word2VecModel
 from pyspark.sql.functions import *
-import os
+import os,random
+from collections import defaultdict
 
 def sortByTime(movieid_time_list:List):
     '''
@@ -31,35 +32,149 @@ def processItemSequence(spark:SparkSession):
     sortUdf = udf(f=sortByTime,returnType=ArrayType(StringType()))
     userSeq=df.where(df['rating'] >= 3.5).groupby('userId').agg(sortUdf(collect_list(struct('movieId','timestamp'))).alias('movieIds'))\
         .withColumn('movieIdStr',array_join('movieIds',' '))
-    userSeq.show(10)
+    userSeq.show(5)
 
     #不使用udf，速度慢一点
     # userSeq=df.where(df['rating'] >= 3.5).sort('timestamp').groupby('userId').agg(collect_list('movieId').alias('movieIds')).withColumn('movieIdStr',array_join('movieIds',' ')).show(10)
 
     userSeq.printSchema()
     dataset = userSeq.select('movieIds')
+    print(dataset.count())
     return dataset
 
-def trainItem2vec(dataset):
+def trainItem2vec(dataset,filename):
     '''
     训练产生embedding,inputCol需要是 array（string）类型
-    训练好后写入 item2vecEmb.txt
+    训练好后写入 filename
     :param dataset:
     :return:
     '''
     word2vec = Word2Vec(vectorSize=10,windowSize=5,maxIter=10,inputCol='movieIds')
     model = word2vec.fit(dataset)
     print('model fitted')
-    synonyms = model.findSynonymsArray('158',20)
-    for moveid,similarity in synonyms:
-        print('{}:{}'.format(moveid,similarity))
+    # 打印相似电影，基于点积运算
+    # synonyms = model.findSynonymsArray('158',20)
+    # for moveid,similarity in synonyms:
+    #     print('{}:{}'.format(moveid,similarity))
 
-    with open('./modeldata/item2vecEmb.txt','w') as f:
+    with open('./modeldata/{}'.format(filename),'w') as f:
         for row in model.getVectors().collect():
-            f.write('{}:{}\n'.format(row['word'],row['vector']))
+            f.write('{}:{}\n'.format(row['word'],' '.join(row['vector'])))
+
+
+def dealPairMovie(movies:Row)->List:
+    newl=[]
+    movies = movies['movieIds']
+    for i in range(len(movies)-1):
+        newl.append((movies[i],movies[i+1]))
+    return newl
+
+
+def generateTransitionMatrix(dataset:DataFrame):
+    '''
+    生成状态转移矩阵
+    :param dataset:
+    :return:
+    '''
+    pairSamples=dataset.rdd.flatMap(dealPairMovie)
+    pairSamples.cache()
+    print(pairSamples.take(10))
+    print('pairSamples over')
+    # {(mid,mid2):count,...}
+    pairCountMap = pairSamples.countByValue()
+
+    print('pairCountMap_{}'.format(len(pairCountMap)))
+    # 计数状态矩阵
+    transitionCountMatrix = defaultdict(dict)
+    itemCountMap = defaultdict(int)
+    all_count=0
+    for k,count in pairCountMap.items():
+        transitionCountMatrix[k[0]][k[1]] = count
+        itemCountMap[k[0]] +=count
+        all_count+=count
+    print('transitionCountMatrix over')
+    #概率状态矩阵
+    transitionMatrix = defaultdict(dict)
+    itemDistribution = defaultdict(int)
+    for a,cmap in transitionCountMatrix.items():
+        for b,count in cmap.items():
+            transitionMatrix[a][b] = float(count /itemCountMap[a])
+
+    for k,count in itemCountMap.items():
+        itemDistribution[k] = float(count / all_count)
+
+    print('transitionMatrix_{}'.format(len(transitionMatrix)))
+    print(transitionMatrix['858'])
+    print('itemDistribution{}'.format(len(itemDistribution)))
+    print(itemDistribution['858'])
+    return transitionMatrix,itemDistribution
+
+def oneRandomWalk(transitionMatrix, itemDistribution, sampleLength):
+    '''
+    单次随机游走
+    :param transitionMatrix:
+    :param itemDistribution:
+    :param sampleLength:
+    :return:
+    '''
+    sample = []
+    randomValue = random.random()
+    firstItem=''
+    accumulateProb=0
+
+    # 按照电影分布，取第一部电影
+    for k,v in itemDistribution.items():
+        accumulateProb+=v
+        if accumulateProb >= randomValue:
+            firstItem=k
+            break
+    sample.append(firstItem)
+    curItem = firstItem
+
+    # 按照状态转移，取后面9部电影
+    for i in range(1,sampleLength):
+        prob = random.random()
+        for k,v in transitionMatrix[firstItem]:
+            if v >= prob:
+                curItem = k
+                break
+        sample.append(curItem)
+    return sample
+
+
+
+def randomWalk(transitionMatrix,itemDistribution,sampleCount,sampleLength):
+    samples = []
+    for i in range(sampleCount):
+        samples.append(oneRandomWalk(transitionMatrix, itemDistribution, sampleLength))
+    return samples
+
+def graphEmb(dataset:DataFrame,spark:SparkSession,embOutputFilename):
+    '''
+    图enbding
+    :param dataset:
+    :param spark:
+    :param embOutputFilename:
+    :return:
+    '''
+    transitionMatrix, itemDistribution=generateTransitionMatrix(dataset)
+    sampleCount = 20000
+    sampleLength = 10
+
+    newSamples=randomWalk(transitionMatrix, itemDistribution, sampleCount, sampleLength)
+    rddSamples=spark.sparkContext.parallelize(newSamples)
+    print(rddSamples[:10])
+
+    # dataFrameSamples = spark.createDataFrame(rddSamples)
+    # trainItem2vec(dataFrameSamples,embOutputFilename)
+
 
 
 if __name__ == '__main__':
     spark = SparkSession.builder.appName('enbbeding').master('local[*]').getOrCreate()
     dataset=processItemSequence(spark)
-    trainItem2vec(dataset)
+    print(type(dataset))
+    # trainItem2vec(dataset)
+    graphEmb(dataset,spark,'item2vecEmb.csv')
+
+
