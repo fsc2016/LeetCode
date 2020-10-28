@@ -106,7 +106,7 @@ if __name__ == '__main__':
 
     # # 独热编码
     # df = df.withColumn('movieIdNumber', df.movieId.cast(IntegerType()))
-    # oneHotEncoderExample(df)
+    oneHotEncoderExample(df)
 
     # multiHotEncoderExample
     multiHotEncoderExample(df)
