@@ -39,6 +39,10 @@ def processItemSequence(spark:SparkSession):
 
     userSeq.printSchema()
     dataset = userSeq.select('movieIds')
+    moviesCount=dataset.select(explode(col('movieIds'))).alias('tmp').distinct().count()
+    print('unique high rating movies:{}'.format(moviesCount))
+
+
     print(dataset.count())
     return dataset
 
@@ -137,12 +141,9 @@ def oneRandomWalk(transitionMatrix, itemDistribution, sampleLength):
         if not transitionMatrix[curItem] or not itemDistribution[curItem]:
             break
         # 随机游走的策略
-        curProb = itemDistribution[curItem]
-        prob = random.random()
-        accumulateProb=0
-        for k,v in transitionMatrix[curItem].items():
-            accumulateProb += v
-            if accumulateProb >= prob*curProb:
+        randomProb = random.random()
+        for k,prob in transitionMatrix[curItem].items():
+            if randomProb >= prob:
                 curItem = k
                 break
 
@@ -152,10 +153,76 @@ def oneRandomWalk(transitionMatrix, itemDistribution, sampleLength):
 
 
 def randomWalk(transitionMatrix,itemDistribution,sampleCount,sampleLength):
+    '''
+    随机游走
+    :param transitionMatrix:
+    :param itemDistribution:
+    :param sampleCount:
+    :param sampleLength:
+    :return:
+    '''
     samples = []
     for i in range(sampleCount):
         samples.append(oneRandomWalk(transitionMatrix, itemDistribution, sampleLength))
     return samples
+
+def oneNode2vec(transitionMatrix, itemDistribution, sampleLength):
+
+    p , q  = 0.1, 0.2
+    sample = []
+    randomValue = random.random()
+    firstItem = ''
+    accumulateProb = 0
+
+    # 按照电影分布，取第一部电影
+    for k, v in itemDistribution.items():
+        accumulateProb += v
+        if accumulateProb >= randomValue:
+            firstItem = k
+            break
+
+    sample.append(firstItem)
+    curItem = firstItem
+    #nodeT始终是curElement的前一个值
+    nodeT = curItem
+    # 按照状态转移，取后面9部电影
+    for i in range(1, sampleLength):
+        if not transitionMatrix[curItem] or not itemDistribution[curItem]:
+            break
+        randomProb = random.random()
+        # 第一步时，curItem和nodeT是同一个点，所以要保持nodeT不动，curIte前进一步
+        if i == 1:
+            for item, prob in transitionMatrix[curItem].items():
+                if randomProb >= prob:
+                    curItem = item
+                    break
+        else:
+            for item, prob in transitionMatrix[curItem].items():
+                # 跳回前一节点
+                if item == nodeT:
+                    prob = prob * 1 / p
+                #distince =1
+                elif item in transitionMatrix[nodeT]:
+                    prob = prob
+                #distince =2
+                else:
+                    prob = prob * 1/q
+
+                if randomProb >= prob:
+                    nodeT = curItem
+                    curItem = item
+                    break
+        sample.append(curItem)
+
+    return sample
+
+
+def node2vec(transitionMatrix,itemDistribution,sampleCount,sampleLength):
+    samples = []
+    for i in range(sampleCount):
+        samples.append(oneNode2vec(transitionMatrix, itemDistribution, sampleLength))
+    return samples
+
 
 def graphEmb(dataset:DataFrame,spark:SparkSession,embOutputFilename):
     '''
@@ -166,10 +233,15 @@ def graphEmb(dataset:DataFrame,spark:SparkSession,embOutputFilename):
     :return:
     '''
     transitionMatrix, itemDistribution=generateTransitionMatrix(dataset)
-    sampleCount = 20000
+    sampleCount = 40000
     sampleLength = 10
 
-    newSamples=randomWalk(transitionMatrix, itemDistribution, sampleCount, sampleLength)
+    # 随机游走
+    # newSamples=randomWalk(transitionMatrix, itemDistribution, sampleCount, sampleLength)
+    newSamples = node2vec(transitionMatrix, itemDistribution, sampleCount, sampleLength)
+
+
+
     # 转为rdd
     rddSamples=spark.sparkContext.parallelize([Row(movieIds=i) for i in newSamples])
     print(newSamples[:10])
@@ -188,6 +260,6 @@ if __name__ == '__main__':
     print(type(dataset))
     print(dataset.take(10))
     # trainItem2vec(dataset,'item2vecEmb1.txt')
-    graphEmb(dataset,spark,'item2graphVecEmb.txt')
+    graphEmb(dataset,spark,'item2graphVecEmb_node_4w.txt')
 
 
