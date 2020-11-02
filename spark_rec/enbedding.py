@@ -3,12 +3,14 @@ findspark.init()
 from typing import *
 from pyspark.sql import *
 from pyspark.sql.types import  IntegerType,ArrayType,StringType
-from pyspark.ml import Pipeline
-from pyspark.ml.feature import Word2Vec,Word2VecModel
+from pyspark.ml.feature import Word2Vec
 from pyspark.sql.functions import *
 import os,random
 from collections import defaultdict
+import redis
 
+HOST ='localhost'
+PORT = 6379
 def sortByTime(movieid_time_list:List):
     '''
     按照时间戳排序，返回movieids
@@ -42,7 +44,7 @@ def processItemSequence(spark:SparkSession):
     print(dataset.count())
     return dataset
 
-def trainItem2vec(dataset,filename):
+def trainItem2vec(dataset,filename,saveToRedis=False,redisKeyPrefix=None):
     '''
     训练产生embedding,inputCol需要是 array（string）类型
     训练好后写入 filename
@@ -59,10 +61,29 @@ def trainItem2vec(dataset,filename):
 
     with open('./modeldata/{}'.format(filename),'w') as f:
         for row in model.getVectors().collect():
-            f.write('{}:{}\n'.format(row['word'],row['vector']))
+            tmp=','.join([str(vector) for vector in row['vector']])
+            f.write('{}:{}\n'.format(row['word'],tmp))
+
+    # redis-cli eval "redis.call('del', unpack(redis.call('keys','*')))" 0 windows批量删除key
+    if saveToRedis:
+        pool = redis.ConnectionPool(host=HOST,port=PORT)
+        # key的存活时间 秒
+        ex = 60 * 10
+        # r = redis.Redis(host=HOST,port=PORT)
+        r = redis.Redis(connection_pool=pool)
+        for i,row in enumerate(model.getVectors().collect()):
+            tmp = ','.join([str(vector) for vector in row['vector']])
+            if i == 1:
+                print(type(row['vector']))
+            r.set('{}:{}'.format(redisKeyPrefix,row['word']),tmp,ex)
 
 
 def dealPairMovie(movies:Row)->List:
+    '''
+    udf
+    :param movies:
+    :return:
+    '''
     newl=[]
     movies = movies['movieIds']
     for i in range(len(movies)-1):
@@ -178,7 +199,7 @@ def graphEmb(dataset:DataFrame,spark:SparkSession,embOutputFilename):
     dataFrameSamples = spark.createDataFrame(rddSamples)
     print(type(dataFrameSamples))
     print(dataFrameSamples.take(10))
-    trainItem2vec(dataFrameSamples,embOutputFilename)
+    # trainItem2vec(dataFrameSamples,embOutputFilename)
 
 
 
@@ -186,8 +207,7 @@ if __name__ == '__main__':
     spark = SparkSession.builder.appName('enbbeding').master('local[*]').getOrCreate()
     dataset=processItemSequence(spark)
     print(type(dataset))
-    print(dataset.take(10))
-    # trainItem2vec(dataset,'item2vecEmb1.txt')
-    graphEmb(dataset,spark,'item2graphVecEmb.txt')
+    trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=True,redisKeyPrefix='i2vEmb')
+    # graphEmb(dataset,spark,'item2graphVecEmb.txt')
 
 
