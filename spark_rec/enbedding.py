@@ -3,7 +3,7 @@ findspark.init()
 from typing import *
 from pyspark.sql import *
 from pyspark.sql.types import  IntegerType,ArrayType,StringType
-from pyspark.ml.feature import Word2Vec
+from pyspark.ml.feature import Word2Vec,Word2VecModel
 from pyspark.sql.functions import *
 import os,random
 from collections import defaultdict
@@ -41,7 +41,9 @@ def processItemSequence(spark:SparkSession):
 
     userSeq.printSchema()
     dataset = userSeq.select('movieIds')
-    print(dataset.count())
+    moviesCount = dataset.select(explode(col('movieIds'))).alias('tmp').distinct().count()
+    print('unique high rating movies:{}'.format(moviesCount))
+    # print(dataset.count())
     return dataset
 
 def trainItem2vec(dataset,filename,saveToRedis=False,redisKeyPrefix=None):
@@ -69,7 +71,6 @@ def trainItem2vec(dataset,filename,saveToRedis=False,redisKeyPrefix=None):
         pool = redis.ConnectionPool(host=HOST,port=PORT)
         # key的存活时间 秒
         ex = 60 * 10
-        # r = redis.Redis(host=HOST,port=PORT)
         r = redis.Redis(connection_pool=pool)
         for i,row in enumerate(model.getVectors().collect()):
             tmp = ','.join([str(vector) for vector in row['vector']])
@@ -158,27 +159,87 @@ def oneRandomWalk(transitionMatrix, itemDistribution, sampleLength):
         if not transitionMatrix[curItem] or not itemDistribution[curItem]:
             break
         # 随机游走的策略
-        curProb = itemDistribution[curItem]
-        prob = random.random()
-        accumulateProb=0
-        for k,v in transitionMatrix[curItem].items():
-            accumulateProb += v
-            if accumulateProb >= prob*curProb:
+        randomProb = random.random()
+        for k, prob in transitionMatrix[curItem].items():
+            if randomProb >= prob:
                 curItem = k
                 break
 
         sample.append(curItem)
     return sample
 
-
-
 def randomWalk(transitionMatrix,itemDistribution,sampleCount,sampleLength):
+    '''
+    随机游走
+    :param transitionMatrix:
+    :param itemDistribution:
+    :param sampleCount:
+    :param sampleLength:
+    :return:
+    '''
     samples = []
     for i in range(sampleCount):
         samples.append(oneRandomWalk(transitionMatrix, itemDistribution, sampleLength))
     return samples
 
-def graphEmb(dataset:DataFrame,spark:SparkSession,embOutputFilename):
+def oneNode2vec(transitionMatrix, itemDistribution, sampleLength):
+
+    p , q  = 0.1, 0.2
+    sample = []
+    randomValue = random.random()
+    firstItem = ''
+    accumulateProb = 0
+
+    # 按照电影分布，取第一部电影
+    for k, v in itemDistribution.items():
+        accumulateProb += v
+        if accumulateProb >= randomValue:
+            firstItem = k
+            break
+
+    sample.append(firstItem)
+    curItem = firstItem
+    #nodeT始终是curElement的前一个值
+    nodeT = curItem
+    # 按照状态转移，取后面9部电影
+    for i in range(1, sampleLength):
+        if not transitionMatrix[curItem] or not itemDistribution[curItem]:
+            break
+        randomProb = random.random()
+        # 第一步时，curItem和nodeT是同一个点，所以要保持nodeT不动，curIte前进一步
+        if i == 1:
+            for item, prob in transitionMatrix[curItem].items():
+                if randomProb >= prob:
+                    curItem = item
+                    break
+        else:
+            for item, prob in transitionMatrix[curItem].items():
+                # 跳回前一节点
+                if item == nodeT:
+                    prob = prob * 1 / p
+                #distince =1
+                elif item in transitionMatrix[nodeT]:
+                    prob = prob
+                #distince =2
+                else:
+                    prob = prob * 1/q
+
+                if randomProb >= prob:
+                    nodeT = curItem
+                    curItem = item
+                    break
+        sample.append(curItem)
+
+    return sample
+
+
+def node2vec(transitionMatrix,itemDistribution,sampleCount,sampleLength):
+    samples = []
+    for i in range(sampleCount):
+        samples.append(oneNode2vec(transitionMatrix, itemDistribution, sampleLength))
+    return samples
+
+def graphEmb(dataset:DataFrame,spark:SparkSession,embOutputFilename,saveToRedis=False,redisKeyPrefix=None):
     '''
     图enbding
     :param dataset:
@@ -190,7 +251,9 @@ def graphEmb(dataset:DataFrame,spark:SparkSession,embOutputFilename):
     sampleCount = 20000
     sampleLength = 10
 
-    newSamples=randomWalk(transitionMatrix, itemDistribution, sampleCount, sampleLength)
+    # newSamples=randomWalk(transitionMatrix, itemDistribution, sampleCount, sampleLength)
+    newSamples = node2vec(transitionMatrix, itemDistribution, sampleCount, sampleLength)
+
     # 转为rdd
     rddSamples=spark.sparkContext.parallelize([Row(movieIds=i) for i in newSamples])
     print(newSamples[:10])
@@ -199,15 +262,22 @@ def graphEmb(dataset:DataFrame,spark:SparkSession,embOutputFilename):
     dataFrameSamples = spark.createDataFrame(rddSamples)
     print(type(dataFrameSamples))
     print(dataFrameSamples.take(10))
-    # trainItem2vec(dataFrameSamples,embOutputFilename)
+    # trainItem2vec(dataFrameSamples,embOutputFilename,saveToRedis,redisKeyPrefix)
+
+
+def generateUserEmb(spark:SparkSession,model:Word2VecModel,embOutputFilename,saveToRedis=False,redisKeyPrefix=None):
+    df = spark.read.format('csv').option('header', 'true').load('./data/ratings.csv')
+    df.printSchema()
 
 
 
 if __name__ == '__main__':
     spark = SparkSession.builder.appName('enbbeding').master('local[*]').getOrCreate()
-    dataset=processItemSequence(spark)
-    print(type(dataset))
-    trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=True,redisKeyPrefix='i2vEmb')
-    # graphEmb(dataset,spark,'item2graphVecEmb.txt')
+    # dataset=processItemSequence(spark)
+    # print(type(dataset))
+    # trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=True,redisKeyPrefix='i2vEmb')
+    # graphEmb(dataset,spark,'item2graphVecEmb.txt',saveToRedis=True,redisKeyPrefix='graphEmb')
+    # model = Word2VecModel()
+    # generateUserEmb(spark,model,'userEmb.csv')
 
 
