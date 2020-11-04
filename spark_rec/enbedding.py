@@ -77,14 +77,9 @@ def trainItem2vec(dataset,filename,saveToRedis=False,redisKeyPrefix=None):
             if i == 1:
                 print(type(row['vector']))
             r.set('{}:{}'.format(redisKeyPrefix,row['word']),tmp,ex)
-
+    return  model
 
 def dealPairMovie(movies:Row)->List:
-    '''
-    udf
-    :param movies:
-    :return:
-    '''
     newl=[]
     movies = movies['movieIds']
     for i in range(len(movies)-1):
@@ -102,7 +97,6 @@ def generateTransitionMatrix(dataset:DataFrame):
     pairSamples.cache()
     print(pairSamples.take(10))
     print('pairSamples over')
-    # {(mid,mid2):count,...}
 
     pairCountMap = pairSamples.countByValue()
 
@@ -126,10 +120,6 @@ def generateTransitionMatrix(dataset:DataFrame):
     for k,count in itemCountMap.items():
         itemDistribution[k] = float(count / all_count)
 
-    print('transitionMatrix_{}'.format(len(transitionMatrix)))
-    print(transitionMatrix['858'])
-    print('itemDistribution_{}'.format(len(itemDistribution)))
-    print(itemDistribution['858'])
     return transitionMatrix,itemDistribution
 
 def oneRandomWalk(transitionMatrix, itemDistribution, sampleLength):
@@ -264,20 +254,50 @@ def graphEmb(dataset:DataFrame,spark:SparkSession,embOutputFilename,saveToRedis=
     print(dataFrameSamples.take(10))
     # trainItem2vec(dataFrameSamples,embOutputFilename,saveToRedis,redisKeyPrefix)
 
+def dealUserEmb(movieids:List):
+    useremb=[0] * 10
+    for movieid in movieids:
+        movEmb = movdict.get(movieid)
+        if movEmb:
+            useremb=[useremb[i]+movEmb[i] for i in range(10)]
+    return ','.join([str(ue) for ue in useremb])
 
 def generateUserEmb(spark:SparkSession,model:Word2VecModel,embOutputFilename,saveToRedis=False,redisKeyPrefix=None):
+    '''
+    用户embbing
+    :param spark:
+    :param model:
+    :param embOutputFilename:
+    :param saveToRedis:
+    :param redisKeyPrefix:
+    :return:
+    '''
     df = spark.read.format('csv').option('header', 'true').load('./data/ratings.csv')
-    df.printSchema()
 
+    due = udf(f=dealUserEmb, returnType=StringType())
+    um = df.groupBy('userId').agg(collect_list(col('movieId')).alias('movieIds')).withColumn('userEmb', due(col('movieIds')))
+    ueEmb = um.select('userId','userEmb').collect()
 
+    if saveToRedis:
+        pool = redis.ConnectionPool(host=HOST,port=PORT)
+        # key的存活时间 秒
+        ex = 60 * 10
+        r = redis.Redis(connection_pool=pool)
+        for row in ueEmb:
+            r.set('{}:{}'.format(redisKeyPrefix,row['userId']),row['userEmb'],ex)
 
 if __name__ == '__main__':
     spark = SparkSession.builder.appName('enbbeding').master('local[*]').getOrCreate()
-    # dataset=processItemSequence(spark)
+    dataset=processItemSequence(spark)
     # print(type(dataset))
-    # trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=True,redisKeyPrefix='i2vEmb')
+    model = trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=True,redisKeyPrefix='i2vEmb')
+
     # graphEmb(dataset,spark,'item2graphVecEmb.txt',saveToRedis=True,redisKeyPrefix='graphEmb')
-    # model = Word2VecModel()
-    # generateUserEmb(spark,model,'userEmb.csv')
+    # 构造itememb dict
+    rows = model.getVectors().collect()
+    movdict = {}
+    for row in rows:
+        movdict[row['word']] = list(row['vector'])
+    generateUserEmb(spark,model,'userEmb.csv',saveToRedis = True,redisKeyPrefix= "uEmb")
 
 

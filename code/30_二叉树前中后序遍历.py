@@ -36,15 +36,17 @@ class Solution:
         :return:
         '''
         if not root : return []
-        stack,res=[root],[]
-        while stack:
-            cur = stack.pop()
-            res.append(cur.val)
-            if cur.right:
-                stack.append(cur.right)
-            if cur.left:
-                stack.append(cur.left)
+        stack,res=[],[]
+        cur = root
+        while stack or cur:
+            while cur:
+                res.append(cur.val)
+                stack.append(cur)
+                cur = cur.left
+            tmp = stack.pop()
+            cur = tmp.right
         return res
+
 
 
     def inorderTraversal(self, root: TreeNode) -> List[int]:
@@ -72,17 +74,16 @@ class Solution:
         :return:
         '''
         if not root : return []
-        stack ,res =[root],[]
-        while stack:
-            cur = stack.pop()
-            if cur.right:
-                stack.append(cur.right)
-            if cur.left:
-                res.append(cur.left.val)
-                stack.append(cur.left)
-            res.append(cur.val)
-        return  res
-
+        stack ,res =[],[]
+        cur = root
+        while stack or cur:
+            while cur:
+                stack.append(cur)
+                cur = cur.left
+            tmp = stack.pop()
+            res.append(tmp.val)
+            cur = tmp.right
+        return res
 
     def postorderTraversal(self, root: TreeNode) -> List[int]:
         '''
@@ -102,3 +103,21 @@ class Solution:
 
         dfs(root)
         return res
+
+    def postorderTraversal_2(self, root: TreeNode) -> List[int]:
+        '''
+        后序遍历-迭代
+        :param root:
+        :return:
+        '''
+        if not root : return []
+        cur ,res,stack = root,[],[]
+        while stack or cur:
+            while cur:
+                res.append(cur.val)
+                stack.append(cur)
+                cur = cur.right
+            tmp = stack.pop()
+            cur = tmp.left
+
+        return res[::-1]
