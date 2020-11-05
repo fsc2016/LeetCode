@@ -14,7 +14,6 @@ def maxSlidingWindow(nums: List[int], k: int) -> List[int]:
     :param k:
     :return:
     '''
-
     n = len(nums)
     if k > n  or n == 0:
         return []
