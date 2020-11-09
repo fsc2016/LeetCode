@@ -41,3 +41,21 @@ class Solution:
             if level:
                 res.append(level)
         return res
+
+    def levelOrder2(self, root: TreeNode) -> List[List[int]]:
+        dq = deque()
+        res = []
+        dq.append(root)
+        while dq:
+            size = len(dq)
+            level =[]
+            for _ in range(size):
+                tmp =dq.popleft()
+                if tmp:
+                    level.append(tmp.val)
+                    dq.append(tmp.left)
+                    dq.append(tmp.right)
+            if level:
+                res.append(level)
+        return res
+

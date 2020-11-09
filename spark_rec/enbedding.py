@@ -6,11 +6,15 @@ from pyspark.sql.types import  IntegerType,ArrayType,StringType
 from pyspark.ml.feature import Word2Vec,Word2VecModel
 from pyspark.sql.functions import *
 import os,random
+from pyspark.ml.linalg import Vectors
 from collections import defaultdict
 import redis
 
+from pyspark.ml.feature import BucketedRandomProjectionLSH
+
 HOST ='localhost'
 PORT = 6379
+
 def sortByTime(movieid_time_list:List):
     '''
     按照时间戳排序，返回movieids
@@ -78,6 +82,24 @@ def trainItem2vec(dataset,filename,saveToRedis=False,redisKeyPrefix=None):
                 print(type(row['vector']))
             r.set('{}:{}'.format(redisKeyPrefix,row['word']),tmp,ex)
     return  model
+
+def embeddingLSH(moviesEmb:DataFrame):
+    '''
+    局部敏感哈希
+    :param spark:
+    :param moviesEmb:
+    :return:
+    '''
+    brp = BucketedRandomProjectionLSH(inputCol='vector',outputCol='bucketId',numHashTables=3,bucketLength=0.1)
+    model = brp.fit(moviesEmb)
+    moviesEmbResult = model.transform(moviesEmb)
+    moviesEmbResult.printSchema()
+    moviesEmbResult.show(5)
+    print("Approximately searching for 5 nearest neighbors of the sample embedding:")
+    sampleEmb = Vectors.dense([0.795,0.583,1.120,0.850,0.174,-0.839,-0.0633,0.249,0.673,-0.237])
+    model.approxNearestNeighbors(moviesEmb,sampleEmb,5).show(5)
+
+
 
 def dealPairMovie(movies:Row)->List:
     newl=[]
@@ -286,18 +308,22 @@ def generateUserEmb(spark:SparkSession,model:Word2VecModel,embOutputFilename,sav
         for row in ueEmb:
             r.set('{}:{}'.format(redisKeyPrefix,row['userId']),row['userEmb'],ex)
 
+
+
+
+
 if __name__ == '__main__':
     spark = SparkSession.builder.appName('enbbeding').master('local[*]').getOrCreate()
     dataset=processItemSequence(spark)
     # print(type(dataset))
-    model = trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=True,redisKeyPrefix='i2vEmb')
-
+    model = trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=False,redisKeyPrefix='i2vEmb')
+    embeddingLSH(model.getVectors())
     # graphEmb(dataset,spark,'item2graphVecEmb.txt',saveToRedis=True,redisKeyPrefix='graphEmb')
     # 构造itememb dict
-    rows = model.getVectors().collect()
-    movdict = {}
-    for row in rows:
-        movdict[row['word']] = list(row['vector'])
-    generateUserEmb(spark,model,'userEmb.csv',saveToRedis = True,redisKeyPrefix= "uEmb")
+    # rows = model.getVectors().collect()
+    # movdict = {}
+    # for row in rows:
+    #     movdict[row['word']] = list(row['vector'])
+    # generateUserEmb(spark,model,'userEmb.csv',saveToRedis = True,redisKeyPrefix= "uEmb")
 
 
