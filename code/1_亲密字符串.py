@@ -25,3 +25,4 @@ class Solution:
 if __name__ == '__main__':
     solu = Solution()
     print(solu.buddyString('ab','ba'))
+    l=[].reverse()
