@@ -9,6 +9,7 @@ import os,random
 from pyspark.ml.linalg import Vectors
 from collections import defaultdict
 import redis
+from pyspark.ml.recommendation import ALS,ALSModel
 
 from pyspark.ml.feature import BucketedRandomProjectionLSH
 
@@ -270,6 +271,7 @@ def graphEmb(dataset:DataFrame,spark:SparkSession,embOutputFilename,saveToRedis=
     rddSamples=spark.sparkContext.parallelize([Row(movieIds=i) for i in newSamples])
     print(newSamples[:10])
     print(rddSamples.take(10))
+
     # 转为DataFrame
     dataFrameSamples = spark.createDataFrame(rddSamples)
     print(type(dataFrameSamples))
@@ -309,15 +311,23 @@ def generateUserEmb(spark:SparkSession,model:Word2VecModel,embOutputFilename,sav
             r.set('{}:{}'.format(redisKeyPrefix,row['userId']),row['userEmb'],ex)
 
 
-
-
+def testALS(spark:SparkSession):
+    df = spark.read.format('csv').option('header','true').load('./data/ratings.csv')
+    newdf = df.select(['userId','movieId','rating'])
+    newdf.printSchema()
+    newdf=newdf.withColumn('userId',newdf.userId.astype('int')).withColumn('movieId',newdf.movieId.astype('int')).withColumn('rating',newdf.rating.astype('float'))
+    newdf.printSchema()
+    als = ALS(maxIter=10,regParam=0.1,userCol='userId',itemCol='movieId',ratingCol='rating')
+    model = als.fit(newdf)
+    model.userFactors.show(5)
+    model.itemFactors.show(5)
 
 if __name__ == '__main__':
     spark = SparkSession.builder.appName('enbbeding').master('local[*]').getOrCreate()
-    dataset=processItemSequence(spark)
+    # dataset=processItemSequence(spark)
     # print(type(dataset))
-    model = trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=False,redisKeyPrefix='i2vEmb')
-    embeddingLSH(model.getVectors())
+    # model = trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=False,redisKeyPrefix='i2vEmb')
+    # embeddingLSH(model.getVectors())
     # graphEmb(dataset,spark,'item2graphVecEmb.txt',saveToRedis=True,redisKeyPrefix='graphEmb')
     # 构造itememb dict
     # rows = model.getVectors().collect()
@@ -326,4 +336,5 @@ if __name__ == '__main__':
     #     movdict[row['word']] = list(row['vector'])
     # generateUserEmb(spark,model,'userEmb.csv',saveToRedis = True,redisKeyPrefix= "uEmb")
 
+    testALS(spark)
 
