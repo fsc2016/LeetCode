@@ -12,6 +12,12 @@ class TreeNode:
 from collections import deque
 class Solution:
     def hasPathSum(self, root: TreeNode, sum: int) -> bool:
+        '''
+        层序遍历 迭代法
+        :param root:
+        :param sum:
+        :return:
+        '''
         if not root:return False
         dq_node = deque()
         dq_value= deque()
@@ -29,4 +35,18 @@ class Solution:
                 dq_node.append(node.right)
                 dq_value.append(value+node.val)
         return False
+
+    def hasPathSum2(self, root: TreeNode, sum: int) -> bool:
+        if not root: return False
+
+        def dfs(node:TreeNode,value):
+            if value == sum and not node.left and not node.right:
+                return True
+            if node.left:
+                return dfs(node.left,value+node.val)
+            if node.right:
+                return dfs(node.right,value+node.val)
+        return dfs(root,0)
+
+
 
