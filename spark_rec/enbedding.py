@@ -311,7 +311,7 @@ def generateUserEmb(spark:SparkSession,model:Word2VecModel,embOutputFilename,sav
             r.set('{}:{}'.format(redisKeyPrefix,row['userId']),row['userEmb'],ex)
 
 
-def testALS(spark:SparkSession):
+def testALS(spark:SparkSession,saveToRedis = False,redisUserPrefix= "uEmb",redisItemPrefix='i2vEmb'):
     df = spark.read.format('csv').option('header','true').load('./data/ratings.csv')
     newdf = df.select(['userId','movieId','rating'])
     newdf.printSchema()
@@ -319,14 +319,25 @@ def testALS(spark:SparkSession):
     newdf.printSchema()
     als = ALS(maxIter=10,regParam=0.1,userCol='userId',itemCol='movieId',ratingCol='rating')
     model = als.fit(newdf)
-    model.userFactors.show(5)
-    model.itemFactors.show(5)
+    # if saveToRedis:
+
+
+
+    # test code
+    # users = newdf.select('userId').distinct().count()
+    # movers = newdf.select('movieId').distinct().count()
+    # print('length user:{} length movie:{}'.format(users,movers))
+    # print(model.userFactors.count())
+    # print(model.itemFactors.count())
+    # print(model.recommendForUserSubset(newdf.where(newdf.userId==10),2).collect())
+    # print(model.recommendForItemSubset(newdf.where(newdf.movieId == 2), 2).collect())
+
 
 if __name__ == '__main__':
     spark = SparkSession.builder.appName('enbbeding').master('local[*]').getOrCreate()
     # dataset=processItemSequence(spark)
     # print(type(dataset))
-    # model = trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=False,redisKeyPrefix='i2vEmb')
+    model = trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=False,redisKeyPrefix='i2vEmb')
     # embeddingLSH(model.getVectors())
     # graphEmb(dataset,spark,'item2graphVecEmb.txt',saveToRedis=True,redisKeyPrefix='graphEmb')
     # 构造itememb dict
@@ -334,7 +345,7 @@ if __name__ == '__main__':
     # movdict = {}
     # for row in rows:
     #     movdict[row['word']] = list(row['vector'])
-    # generateUserEmb(spark,model,'userEmb.csv',saveToRedis = True,redisKeyPrefix= "uEmb")
+    generateUserEmb(spark,model,'userEmb.csv',saveToRedis = True,redisKeyPrefix= "uEmb")
 
-    testALS(spark)
+    testALS(spark,saveToRedis = True,redisUserPrefix= "uEmb",redisItemPrefix='i2vEmb')
 
