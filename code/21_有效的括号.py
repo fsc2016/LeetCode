@@ -43,13 +43,11 @@ def isValid(s: str) -> bool:
         #     if stack.pop() != kv.get(i):
         #         return False
         if i in kv.keys():
-            if not stack or stack[-1]!= kv.get(i):
+            if not stack or stack.pop() !=  kv.get(i):
                 return False
-            stack.pop()
         else:
             stack.append(i)
-
-    return False if stack else True
+    return not stack
 
 
 if __name__ == '__main__':
