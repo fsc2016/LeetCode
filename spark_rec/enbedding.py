@@ -319,7 +319,17 @@ def testALS(spark:SparkSession,saveToRedis = False,redisUserPrefix= "uEmb",redis
     newdf.printSchema()
     als = ALS(maxIter=10,regParam=0.1,userCol='userId',itemCol='movieId',ratingCol='rating')
     model = als.fit(newdf)
-    # if saveToRedis:
+    print(model.itemFactors.take(2))
+    if saveToRedis:
+        pool = redis.ConnectionPool(host=HOST,port=PORT)
+        # key的存活时间 秒
+        ex = 60 * 60
+        r = redis.Redis(connection_pool=pool)
+        for row in model.itemFactors.collect():
+            tmp =[str(i) for i in row['features']]
+            r.set('{}:{}'.format(redisItemPrefix, row['id']), ' '.join(tmp), ex)
+
+
 
 
 
@@ -337,7 +347,7 @@ if __name__ == '__main__':
     spark = SparkSession.builder.appName('enbbeding').master('local[*]').getOrCreate()
     # dataset=processItemSequence(spark)
     # print(type(dataset))
-    model = trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=False,redisKeyPrefix='i2vEmb')
+    # model = trainItem2vec(dataset,'item2vecEmb1.txt',saveToRedis=False,redisKeyPrefix='i2vEmb')
     # embeddingLSH(model.getVectors())
     # graphEmb(dataset,spark,'item2graphVecEmb.txt',saveToRedis=True,redisKeyPrefix='graphEmb')
     # 构造itememb dict
@@ -345,7 +355,7 @@ if __name__ == '__main__':
     # movdict = {}
     # for row in rows:
     #     movdict[row['word']] = list(row['vector'])
-    generateUserEmb(spark,model,'userEmb.csv',saveToRedis = True,redisKeyPrefix= "uEmb")
+    # generateUserEmb(spark,model,'userEmb.csv',saveToRedis = True,redisKeyPrefix= "uEmb")
 
     testALS(spark,saveToRedis = True,redisUserPrefix= "uEmb",redisItemPrefix='i2vEmb')
 
