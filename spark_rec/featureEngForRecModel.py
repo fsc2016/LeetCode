@@ -4,16 +4,17 @@ findspark.init()
 from pyspark.sql import *
 from pyspark.sql.types import  IntegerType,ArrayType,StringType
 from pyspark.ml.feature import OneHotEncoder,StringIndexer,QuantileDiscretizer,MinMaxScaler
-from pyspark.ml import Pipeline
-# from pyspark.sql.functions import explode,split
-from pyspark.sql.functions import udf,col,when,split,format_number,stddev,count,lit,avg,collect_list,reverse
+import redis
+from pyspark.sql.functions import udf,col,when,split,format_number,stddev,count,lit,avg,collect_list,reverse,row_number
 from pyspark.sql import Window
 from collections import defaultdict
 from pyspark.ml.linalg import VectorUDT,Vectors
 
+HOST = 'localhost'
+PORT = '6379'
 def addSampleLabel(ratingSamples:DataFrame) -> DataFrame:
     '''
-    筛选大于3.5的评分评论
+    增加label列
     :param ratingSamples:
     :return:
     '''
@@ -109,8 +110,41 @@ def addUserFeatures(df:DataFrame):
         .withColumn("userGenre5", col("userGenres").getItem(4))\
         .drop("genres", "userGenres", "userPositiveHistory").filter(col('userRatingCount') > 1)
 
-    samplesWithUserFeatures.printSchema()
-    samplesWithUserFeatures.show(100,truncate=True)
+    # samplesWithUserFeatures.printSchema()
+    # samplesWithUserFeatures.show(100,truncate=True)
+    return  samplesWithUserFeatures
+
+def extractAndSaveMovieFeaturesToRedis(df:DataFrame):
+    # 获取每部电影最新的评论那一行，最为该电影的特征
+    movieLatestSamples = df.withColumn('movieRowNum',row_number().over(Window.partitionBy('movieId').orderBy(col('timestamp').desc())))\
+        .filter(col('movieRowNum')==1) \
+        .select("movieId","releaseYear", "movieGenre1","movieGenre2","movieGenre3","movieRatingCount","movieAvgRating", "movieRatingStddev").na.fill('')
+
+    movieLatestSamples.printSchema()
+    movieLatestSamples.show(10,truncate=True)
+
+    movieFeaturePrefix = "mf:"
+    totalMovies=movieLatestSamples.count()
+
+    pool = redis.ConnectionPool(host=HOST,port=PORT)
+    # key的存活时间 秒
+    ex = 60 * 60
+    r = redis.Redis(connection_pool=pool)
+    for n,row in enumerate(movieLatestSamples.collect()):
+        movie={}
+        movie['releaseYear'] = row['releaseYear']
+        movie['movieGenre1'] = row['movieGenre1']
+        movie['movieGenre2'] = row['movieGenre2']
+        movie['movieGenre3'] = row['movieGenre3']
+        movie['movieRatingCount'] = row['movieRatingCount']
+        movie['movieAvgRating'] = row['movieAvgRating']
+        movieKey = '{}{}'.format(movieFeaturePrefix,row['movieId'])
+        r.hmset(movieKey,movie)
+        r.expire(movieKey,ex)
+
+        if n % 100 == 0:
+            print(str(n) + "/" + str(totalMovies) + "...")
+
 
 
 if __name__ == '__main__':
@@ -121,6 +155,8 @@ if __name__ == '__main__':
     ratingSamplesWithLabel.show(10,truncate=60)
 
     samplesWithMovieFeatures=addMovieFeatures(moviedf,ratingSamplesWithLabel)
-    addUserFeatures(samplesWithMovieFeatures)
+    # samplesWithUserFeatures=addUserFeatures(samplesWithMovieFeatures)
+    samplesWithMovieFeatures.show(10,truncate=60)
+    extractAndSaveMovieFeaturesToRedis(samplesWithMovieFeatures)
 
 
