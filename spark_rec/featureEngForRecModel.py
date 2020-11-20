@@ -147,42 +147,46 @@ def extractAndSaveMovieFeaturesToRedis(df:DataFrame):
 
 
 def extractAndSaveUserFeaturesToRedis(df:DataFrame):
-    userLatestSamples = df.withColumn('userRowNum',row_number().over(Window.partitionBy('movieId').orderBy(col('timestamp').desc()))) \
+    userLatestSamples = df.withColumn('userRowNum',row_number().over(Window.partitionBy('userId').orderBy(col('timestamp').desc()))) \
             .filter(col('userRowNum') == 1) \
             .select("userId","userRatedMovie1", "userRatedMovie2","userRatedMovie3","userRatedMovie4","userRatedMovie5","userRatingCount", "userAvgReleaseYear", "userReleaseYearStddev", "userAvgRating", "userRatingStddev","userGenre1", "userGenre2","userGenre3","userGenre4","userGenre5").na.fill('')
 
     userLatestSamples.printSchema()
     userLatestSamples.show(5, truncate=True)
 
-    userFeaturePrefix = "uf:"
-    totalUsers = userLatestSamples.count()
-    pool = redis.ConnectionPool(host=HOST, port=PORT)
-    # key的存活时间 秒
-    ex = 60 * 60
-    r = redis.Redis(connection_pool=pool)
-    for n, row in enumerate(userLatestSamples.collect()):
-        user = {}
-        user['userRatedMovie1'] = row['userRatedMovie1']
-        user['userRatedMovie2'] = row['userRatedMovie2']
-        user['userRatedMovie3'] = row['userRatedMovie3']
-        user['userRatedMovie4'] = row['userRatedMovie4']
-        user['userRatedMovie5'] = row['userRatedMovie5']
-        user['userRatingCount'] = row['userRatingCount']
-        user['userAvgReleaseYear'] = row['userAvgReleaseYear']
-        user['userReleaseYearStddev'] = row['userReleaseYearStddev']
-        user['userAvgRating'] = row['userAvgRating']
-        user['userRatingStddev'] = row['userRatingStddev']
-        user['userGenre1'] = row['userGenre1']
-        user['userGenre2'] = row['userGenre2']
-        user['userGenre3'] = row['userGenre3']
-        user['userGenre4'] = row['userGenre4']
-        user['userGenre5'] = row['userGenre5']
-        userKey = '{}{}'.format(userFeaturePrefix, row['userId'])
-        r.hmset(userKey, user)
-        r.expire(userKey, ex)
+    userLatestSamples.repartition(1).write.option('header', 'true').csv('./data/modelSamplesRow')
 
-        if n % 1000 == 0:
-            print(str(n) + "/" + str(totalUsers) + "...")
+
+
+    # userFeaturePrefix = "uf:"
+    # totalUsers = userLatestSamples.count()
+    # pool = redis.ConnectionPool(host=HOST, port=PORT)
+    # # key的存活时间 秒
+    # ex = 60 * 60
+    # r = redis.Redis(connection_pool=pool)
+    # for n, row in enumerate(userLatestSamples.collect()):
+    #     user = {}
+    #     user['userRatedMovie1'] = row['userRatedMovie1']
+    #     user['userRatedMovie2'] = row['userRatedMovie2']
+    #     user['userRatedMovie3'] = row['userRatedMovie3']
+    #     user['userRatedMovie4'] = row['userRatedMovie4']
+    #     user['userRatedMovie5'] = row['userRatedMovie5']
+    #     user['userRatingCount'] = row['userRatingCount']
+    #     user['userAvgReleaseYear'] = row['userAvgReleaseYear']
+    #     user['userReleaseYearStddev'] = row['userReleaseYearStddev']
+    #     user['userAvgRating'] = row['userAvgRating']
+    #     user['userRatingStddev'] = row['userRatingStddev']
+    #     user['userGenre1'] = row['userGenre1']
+    #     user['userGenre2'] = row['userGenre2']
+    #     user['userGenre3'] = row['userGenre3']
+    #     user['userGenre4'] = row['userGenre4']
+    #     user['userGenre5'] = row['userGenre5']
+    #     userKey = '{}{}'.format(userFeaturePrefix, row['userId'])
+    #     r.hmset(userKey, user)
+    #     r.expire(userKey, ex)
+    #
+    #     if n % 1000 == 0:
+    #         print(str(n) + "/" + str(totalUsers) + "...")
 
 if __name__ == '__main__':
     spark = SparkSession.builder.appName("featureEng").master('local[*]').getOrCreate()
@@ -197,9 +201,10 @@ if __name__ == '__main__':
     # samplesWithMovieFeatures.show(10,truncate=60)
     # extractAndSaveMovieFeaturesToRedis(samplesWithMovieFeatures)
 
-    pandaDF=samplesWithUserFeatures.toPandas()
-    pandaDF.to_csv('./data/samplesWithMovieFeatures.csv')
+    # pandaDF=samplesWithUserFeatures.toPandas()
+    # pandaDF.to_csv('./data/samplesWithMovieFeatures.csv')
 
+    samplesWithMovieFeatures.sample(0.1).repartition(1).write.option('header','true').csv('./data/modelsamples')
     extractAndSaveUserFeaturesToRedis(samplesWithUserFeatures)
 
 
