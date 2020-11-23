@@ -54,7 +54,6 @@ def addMovieFeatures(movieSamples:DataFrame,ratingSamples:DataFrame):
     samplesWithMovies2 = samplesWithMovies1.withColumn('releaseYear',extractReleaseYearUdf(col('title'))).withColumn('newTitle',extractTitleUdf(col('title'))).drop('title')
 
     # samplesWithMovies2.show(10,truncate=True)
-
     samplesWithMovies3=samplesWithMovies2.withColumn('movieGenre1',split(col('genres'),'\\|').getItem(0)).withColumn('movieGenre2',split(col('genres'),'\\|').getItem(1)).withColumn('movieGenre3',split(col('genres'),'\\|').getItem(2))
 
     # samplesWithMovies3.show(10,truncate=True)
