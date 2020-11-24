@@ -197,6 +197,7 @@ if __name__ == '__main__':
     samplesWithMovieFeatures=addMovieFeatures(moviedf,ratingSamplesWithLabel)
     samplesWithUserFeatures=addUserFeatures(samplesWithMovieFeatures)
 
+
     # samplesWithMovieFeatures.show(10,truncate=60)
     # extractAndSaveMovieFeaturesToRedis(samplesWithMovieFeatures)
 
