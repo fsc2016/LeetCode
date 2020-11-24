@@ -14,9 +14,9 @@ model = tf.keras.models.Sequential([
 ])
 model.compile(optimizer='adam',loss='sparse_categorical_crossentropy',metrics=['accuracy'])
 model.summary()
-print(type(x_train))
-print(x_train.shape)
-print(x_train[1])
+# print(type(x_train))
+# print(x_train.shape)
+# print(x_train[1])
 model.fit(x=x_train,y=y_train,epochs=5)
 
 model.evaluate(x_test,y_test,verbose=2)
