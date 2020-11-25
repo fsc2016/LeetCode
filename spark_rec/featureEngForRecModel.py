@@ -204,7 +204,8 @@ if __name__ == '__main__':
     # pandaDF=samplesWithUserFeatures.toPandas()
     # pandaDF.to_csv('./data/samplesWithMovieFeatures.csv')
 
-    samplesWithMovieFeatures.sample(0.1).repartition(1).write.option('header','true').csv('./data/modelsamples')
+
+    samplesWithMovieFeatures.repartition(1).write.option('header','true').csv('./data/modelsamples')
     extractAndSaveUserFeaturesToRedis(samplesWithUserFeatures)
 
 
