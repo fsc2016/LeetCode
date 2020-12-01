@@ -2,7 +2,7 @@ from typing import *
 import findspark
 findspark.init()
 from pyspark.sql import *
-from pyspark.sql.types import  IntegerType,ArrayType,StringType
+from pyspark.sql.types import  IntegerType,ArrayType,StringType,FloatType
 from pyspark.ml.feature import OneHotEncoder,StringIndexer,QuantileDiscretizer,MinMaxScaler
 import redis
 from pyspark.sql.functions import udf,col,when,split,format_number,stddev,count,lit,avg,collect_list,reverse,row_number
@@ -12,6 +12,10 @@ from pyspark.ml.linalg import VectorUDT,Vectors
 
 HOST = 'localhost'
 PORT = '6379'
+
+def tmpDouble2vec(x):
+    return Vectors.dense(x)
+
 def addSampleLabel(ratingSamples:DataFrame) -> DataFrame:
     '''
     增加label列
@@ -24,6 +28,8 @@ def addSampleLabel(ratingSamples:DataFrame) -> DataFrame:
     ratingSamples.groupBy('rating').count().orderBy('rating').withColumn('percentage',col('count')/sampleCount).show(10,truncate=False)
     #将过滤3.5评分的数据
     ratingSamples=ratingSamples.withColumn('label',when(ratingSamples['rating']>=3.5,1).otherwise(0))
+    ratingSamples = ratingSamples.withColumn('rating',ratingSamples['rating'].astype('float'))
+    ratingSamples.show(10, truncate=True)
     return ratingSamples
 
 def extractReleaseYear(title:str):
@@ -79,12 +85,13 @@ def extractGenres(genres):
     return genList
 
 
-def addUserFeatures(df:DataFrame):
+def addUserFeatures(df:DataFrame)->DataFrame:
     '''
     提取用户特征
     :param df:
     :return:
     '''
+
     extractGenresUdf = udf(extractGenres,returnType=ArrayType(IntegerType()))
     print('start user feature')
     samplesWithUserFeatures = df.withColumn('userPositiveHistory',collect_list(when(col('label')==1,col('movieId')).otherwise(lit(None))).over(Window.partitionBy('userId').orderBy(col('timestamp')).rowsBetween(-100,-1)))\
@@ -110,7 +117,7 @@ def addUserFeatures(df:DataFrame):
         .drop("genres", "userGenres", "userPositiveHistory").filter(col('userRatingCount') > 1)
 
     # samplesWithUserFeatures.printSchema()
-    # samplesWithUserFeatures.show(100,truncate=True)
+    samplesWithUserFeatures.show(10,truncate=True)
     return  samplesWithUserFeatures
 
 def extractAndSaveMovieFeaturesToRedis(df:DataFrame):
@@ -187,15 +194,39 @@ def extractAndSaveUserFeaturesToRedis(df:DataFrame):
     #     if n % 1000 == 0:
     #         print(str(n) + "/" + str(totalUsers) + "...")
 
+def minMaxScaler(df:DataFrame,inputCol)->DataFrame:
+    '''
+    数值类型数据归一化
+    :param df:
+    :return:
+    rating userRatingCount userAvgRating userRatingStddev  userReleaseYearStddev
+    '''
+    # minMax 处理
+    outputCol = inputCol+'Scaler'
+    double2vec = udf(f=tmpDouble2vec, returnType=VectorUDT())
+    df = df.withColumn(inputCol, double2vec(col(inputCol)))
+    ratingScaler = MinMaxScaler(inputCol=inputCol,outputCol=outputCol).fit(df)
+    df = ratingScaler.transform(df)
+
+    # 取放缩后的值
+    to_array = udf(lambda x: x.toArray().tolist(), ArrayType(FloatType()))
+    df = df.withColumn(inputCol, to_array(col(outputCol)).getItem(0))
+    df = df.withColumn(inputCol,format_number(col(inputCol),3)).drop(outputCol)
+
+    return df
+
 if __name__ == '__main__':
     spark = SparkSession.builder.appName("featureEng").master('local[*]').getOrCreate()
     ratedf = spark.read.format('csv').option('header','true').load('./data/ratings.csv')
     moviedf = spark.read.format('csv').option('header','true').load('./data/movies.csv')
     ratingSamplesWithLabel =  addSampleLabel(ratedf)
-    ratingSamplesWithLabel.show(10,truncate=60)
+    ratingSamplesWithLabel.printSchema()
+    # ratingSamplesWithLabel.show(10,truncate=True)
 
     samplesWithMovieFeatures=addMovieFeatures(moviedf,ratingSamplesWithLabel)
     samplesWithUserFeatures=addUserFeatures(samplesWithMovieFeatures)
+    # samplesWithUserFeatures.show(5,truncate=True)
+    minMaxScaler(samplesWithUserFeatures,'rating').show(10,truncate=True)
 
 
     # samplesWithMovieFeatures.show(10,truncate=60)
@@ -205,8 +236,8 @@ if __name__ == '__main__':
     # pandaDF.to_csv('./data/samplesWithMovieFeatures.csv')
 
 
-    samplesWithMovieFeatures.repartition(1).write.option('header','true').csv('./data/modelsamples')
-    extractAndSaveUserFeaturesToRedis(samplesWithUserFeatures)
+    # samplesWithMovieFeatures.repartition(1).write.option('header','true').csv('./data/modelsamples')
+    # extractAndSaveUserFeaturesToRedis(samplesWithUserFeatures)
 
 
 

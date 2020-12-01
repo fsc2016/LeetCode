@@ -66,12 +66,13 @@ def ratingFeatures(rating_df):
                                                           avg(col('rating')).alias('avgRating'),
                                                           variance(col('rating')).alias('ratingVar')).withColumn(
         'avgRatingVec', double2vec(col('avgRating')))
-    movieFeatures.show(10)
+
+    movieFeatures.show(10,truncate=True)
 
     userFeatures = rating_df.groupBy(col('userId')).agg(count(lit(1)).alias('ratingCount'),
                                                         avg(col('rating')).alias('avgRating'),
                                                         variance(col('rating')).alias('ratingVar'))
-    userFeatures.show(10)
+    userFeatures.show(10,truncate=True)
 
     movieFeatures.printSchema()
 
@@ -80,10 +81,12 @@ def ratingFeatures(rating_df):
                                                  numBuckets=100).setHandleInvalid('keep')
     # 归一化
     ratingScaler = MinMaxScaler(inputCol='avgRatingVec', outputCol='scaleAvgRating')
+
     pipe = Pipeline(stages=[ratingCountDiscretizer, ratingScaler])
     model = pipe.fit(movieFeatures)
     movieProcessedFeatures = model.transform(movieFeatures)
-    movieProcessedFeatures.show(10)
+    movieProcessedFeatures.show(10,truncate=True)
+    movieProcessedFeatures.printSchema()
 
 def tmpArray2vec(indexes,size):
     indexes.sort()
@@ -106,10 +109,10 @@ if __name__ == '__main__':
 
     # # 独热编码
     # df = df.withColumn('movieIdNumber', df.movieId.cast(IntegerType()))
-    oneHotEncoderExample(df)
+    # oneHotEncoderExample(df)
 
     # multiHotEncoderExample
-    multiHotEncoderExample(df)
+    # multiHotEncoderExample(df)
 
     #ratingFeatures
     rating_df = spark.read.format('csv').option("header", "true").load(path='./data/ratings.csv')

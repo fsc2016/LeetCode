@@ -30,6 +30,12 @@ class Solution:
             reserve_head,reserve_head.next,cur = cur,reserve_head,cur.next
         return reserve_head
 
+    def reverseList_rv2(self,head:ListNode):
+        reserse_node = (None)
+        cur = head
+        while cur:
+            cur,reserse_node,reserse_node.next = cur.next ,cur,reserse_node
+
 if __name__ == '__main__':
     l=[1,2,3,4,5]
     for i in l:
